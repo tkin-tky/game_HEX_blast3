@@ -6,7 +6,7 @@
         content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>Hex Blast（Block Blast風 / 六角形）</title>
+  <title>Hex Blast（六角 / ドラッグ配置）</title>
   <style>
     :root{
       --bg:#0b1020;
@@ -17,8 +17,10 @@
       --safe-t: env(safe-area-inset-top, 0px);
     }
     *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
-    html,body{ height:100%; margin:0; background:var(--bg); color:var(--text);
-      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;}
+    html,body{
+      height:100%; margin:0; background:var(--bg); color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    }
     body{ overscroll-behavior:none; touch-action:none; user-select:none; }
 
     #app{
@@ -148,7 +150,7 @@
   <div class="topbar">
     <div class="title">
       <b>Hex Blast</b>
-      <span>六角マス / ドラッグで配置（iPhone最適化）</span>
+      <span>六角マス / ドラッグで配置（指で隠れないゴースト）</span>
     </div>
     <div class="stats">
       <div class="pill"><span class="k">SCORE</span><span class="v" id="score">0</span></div>
@@ -172,7 +174,7 @@
           <p style="margin-top:10px;">
             <b style="color:var(--text)">操作</b><br>
             ・下のピースを<strong>ドラッグ</strong>して盤面へ<br>
-            ・指を離した場所が置けるなら配置<br>
+            ・ゴーストは指の<strong>上＆左右</strong>に出ます（見えやすい）<br>
             ・3方向いずれかの“列”が埋まると消えます
           </p>
         </div>
@@ -193,34 +195,24 @@
 
 <script>
 (() => {
-  // =============================
-  // iPhone: スクロール/ピンチ抑止
-  // =============================
+  // ===== iPhone: スクロール/ピンチ抑止 =====
   const prevent = (e) => { e.preventDefault(); };
   document.addEventListener('touchmove', prevent, { passive:false });
   document.addEventListener('gesturestart', prevent, { passive:false });
   document.addEventListener('gesturechange', prevent, { passive:false });
   document.addEventListener('gestureend', prevent, { passive:false });
 
-  // =============================
-  // 盤面（マス数を減らす）
-  // 「添付のように」の厳密一致が必要なら、ここを“座標リスト”に置き換えできます。
-  // まずは小さめの六角盤（R=4）に変更しました（R=5→4）。
-  // =============================
-  const RADIUS = 4; // ★マス数減（R=4: 61マス / R=3: 37マス）
+  // ===== 盤面（小さめ）=====
+  const RADIUS = 4; // マス数減（R=4:61）
   const keyOf = (q,r) => `${q},${r}`;
   const dirs = [
     {q: 1, r: 0}, {q: 1, r:-1}, {q: 0, r:-1},
     {q:-1, r: 0}, {q:-1, r: 1}, {q: 0, r: 1}
   ];
-
   function inBoard(q,r){
     const s = -q - r;
     return (Math.abs(q) <= RADIUS && Math.abs(r) <= RADIUS && Math.abs(s) <= RADIUS);
   }
-
-  // もし「添付の形」が“六角形ではなく、六角タイルで構成された特殊形状”なら
-  // この関数を「許可セルのSet」を参照する形に差し替えればOKです。
   function allCells(){
     const arr = [];
     for(let q=-RADIUS; q<=RADIUS; q++){
@@ -232,9 +224,7 @@
   }
   const cells = allCells();
 
-  // =============================
-  // Rendering
-  // =============================
+  // ===== Rendering =====
   const boardWrap = document.getElementById('boardWrap');
   const boardCanvas = document.getElementById('board');
   const bctx = boardCanvas.getContext('2d');
@@ -278,7 +268,7 @@
   function hexPath(ctx, x, y, size){
     ctx.beginPath();
     for(let i=0;i<6;i++){
-      const a = (Math.PI/180) * (60*i - 30); // pointy-top
+      const a = (Math.PI/180) * (60*i - 30);
       const px = x + size * Math.cos(a);
       const py = y + size * Math.sin(a);
       if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
@@ -312,6 +302,7 @@
       const right  = originX + maxX + half;
       const top    = originY + minY - half;
       const bottom = originY + maxY + half;
+
       const ok = (left >= pad) && (right <= rect.width - pad) && (top >= pad) && (bottom <= rect.height - pad);
       if(ok) return {size, originX, originY};
 
@@ -319,7 +310,6 @@
       if(size < 10) size = 10;
     }
 
-    // fallback center
     let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
     for(const c of cells){
       const p = axialToPixelLocal(c.q,c.r,size);
@@ -362,14 +352,11 @@
     drawTray();
   }
 
-  // =============================
-  // Game state
-  // =============================
+  // ===== Game state =====
   let occupied = new Map();
   let score = 0;
   let combo = 0;
 
-  // polyhex patterns
   const PATTERNS = [
     [{q:0,r:0}],
     [{q:0,r:0},{q:1,r:0}],
@@ -399,8 +386,8 @@
     {fill:"rgba(248,113,113,.80)", stroke:"rgba(248,113,113,.92)"},
   ];
 
-  let pieces = [null,null,null]; // {cells, color, used}
-  let hoverPlacement = null; // {anchorCell, ok, absCells}
+  let pieces = [null,null,null];
+  let hoverPlacement = null;
 
   function randInt(n){ return Math.floor(Math.random()*n); }
   function newPiece(){
@@ -453,7 +440,6 @@
         line.forEach(c => toClear.add(keyOf(c.q,c.r))); clearedCount++;
       }
     }
-
     if(toClear.size){
       for(const k of toClear) occupied.delete(k);
     }
@@ -509,7 +495,6 @@
     combo = 0;
     hoverPlacement = null;
     for(let i=0;i<3;i++) pieces[i] = newPiece();
-    // 初期詰み回避
     for(let t=0;t<6 && !anyMovePossible();t++){
       for(let i=0;i<3;i++) pieces[i] = newPiece();
     }
@@ -520,29 +505,24 @@
     drawTray();
   }
 
-  // =============================
-  // Drawing
-  // =============================
+  // ===== Drawing =====
   function draw(){
     const rect = boardWrap.getBoundingClientRect();
     const W = rect.width, H = rect.height;
     bctx.clearRect(0,0,W,H);
 
-    // subtle bg
     bctx.save();
     bctx.globalAlpha = 0.55;
     bctx.fillStyle = "rgba(255,255,255,.02)";
     bctx.fillRect(0,0,W,H);
     bctx.restore();
 
-    // frame
     bctx.save();
     bctx.strokeStyle = "rgba(255,255,255,.08)";
     bctx.lineWidth = 2;
     bctx.strokeRect(10,10,W-20,H-20);
     bctx.restore();
 
-    // empty
     for(const c of cells){
       const p = geom.cellToPix.get(keyOf(c.q,c.r));
       const size = geom.hexSize;
@@ -554,7 +534,6 @@
       bctx.stroke();
     }
 
-    // preview
     if(hoverPlacement && hoverPlacement.absCells){
       for(const c of hoverPlacement.absCells){
         const p = geom.cellToPix.get(keyOf(c.q,c.r));
@@ -569,7 +548,6 @@
       }
     }
 
-    // occupied
     for(const [k, colorIdx] of occupied.entries()){
       const p = geom.cellToPix.get(k);
       if(!p) continue;
@@ -653,10 +631,7 @@
   // Drag & Drop（Pointer Events）
   // =============================
   let drag = {
-    active:false,
-    slot:-1,
-    pointerId:null,
-    startX:0, startY:0,
+    active:false, slot:-1, pointerId:null,
     lastX:0, lastY:0
   };
 
@@ -664,7 +639,6 @@
     ghost.style.display = "block";
     gctx.clearRect(0,0,ghostCanvas.width, ghostCanvas.height);
 
-    // draw piece centered
     const size = 22;
     const SQ3 = Math.sqrt(3);
     const pts = piece.cells.map(c => ({
@@ -699,9 +673,21 @@
     }
   }
 
+  // ★ここが①＋③（指の上＆左右に逃がす）
   function moveGhost(clientX, clientY){
-    // finger center
-    ghost.style.transform = `translate(${clientX - 70}px, ${clientY - 90}px)`;
+    const vw = window.innerWidth || 390;
+
+    const offsetY = 150; // 指から上に離す距離（大きいほど見やすい）
+    const offsetX = (clientX > vw * 0.55) ? -70 : 70; // 右側なら左へ、左側なら右へ
+
+    // ghostの基準サイズ（CSS width/height 140px）に合わせて中心補正
+    const halfW = 70;
+    const tweakY = 90;
+
+    const x = clientX + offsetX - halfW;
+    const y = clientY - offsetY - tweakY;
+
+    ghost.style.transform = `translate(${x}px, ${y}px)`;
   }
 
   function hideGhost(){
@@ -731,7 +717,6 @@
     const cell = boardCellFromClientXY(clientX, clientY);
     if(!cell) return false;
 
-    // 直下がダメなら近傍も試す（指のズレ救済）
     const tries = [{q:0,r:0}, ...dirs];
     for(const d of tries){
       const a = {q: cell.q + d.q, r: cell.r + d.r};
@@ -747,16 +732,12 @@
     const piece = pieces[slotIndex];
     if(!piece || piece.used) return;
 
-    // drag start
     drag.active = true;
     drag.slot = slotIndex;
     drag.pointerId = e.pointerId;
-    drag.startX = e.clientX;
-    drag.startY = e.clientY;
     drag.lastX = e.clientX;
     drag.lastY = e.clientY;
 
-    // capture to keep receiving moves
     e.currentTarget.setPointerCapture(e.pointerId);
 
     showGhostForPiece(piece);
@@ -781,10 +762,8 @@
     if(!drag.active || e.pointerId !== drag.pointerId) return;
 
     const piece = pieces[drag.slot];
-    const slot = drag.slot;
-
-    // drop
     let placed = false;
+
     if(piece && !piece.used){
       placed = tryDrop(piece, drag.lastX, drag.lastY);
       if(placed){
@@ -808,7 +787,7 @@
     if(placed) hintEl.textContent = "ピースをドラッグして配置";
   }
 
-  // attach pointer handlers to each slot
+  // attach to slots
   slotEls.forEach((el) => {
     const idx = Number(el.dataset.slot);
     el.addEventListener('pointerdown', (e) => { e.preventDefault(); onSlotPointerDown(e, idx); });
@@ -817,11 +796,12 @@
     el.addEventListener('pointercancel',(e)=> { e.preventDefault(); endDrag(e); });
   });
 
-  // also show preview when dragging over board even if pointer events originate from slot
+  // keep updating while dragging
   window.addEventListener('pointermove', (e) => {
     if(!drag.active) return;
     const piece = pieces[drag.slot];
     if(!piece || piece.used) return;
+    drag.lastX = e.clientX; drag.lastY = e.clientY;
     moveGhost(e.clientX, e.clientY);
     updatePreview(piece, e.clientX, e.clientY);
   }, {passive:false});
@@ -830,9 +810,7 @@
     if(drag.active) endDrag(e);
   }, {passive:false});
 
-  // =============================
-  // Overlay / Restart
-  // =============================
+  // ===== Overlay / Restart =====
   function showOverlay(title, text){
     ovTitle.textContent = title;
     ovText.textContent = text;
@@ -844,14 +822,11 @@
   ovClose.addEventListener('click', hideOverlay);
   restartBtn.addEventListener('click', resetGame);
 
-  // =============================
-  // Resize / Init
-  // =============================
+  // ===== Resize / Init =====
   function lockViewport(){
     document.documentElement.style.height = "100%";
     document.body.style.height = "100%";
   }
-
   window.addEventListener('resize', () => {
     lockViewport();
     resizeBoard();
