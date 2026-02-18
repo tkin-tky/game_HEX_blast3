@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Hex Blast（Block Blast風 / 六角形）</title>
+  <style>
+    :root{
+      --bg:#0b1020;
+      --panel:#111a33;
+      --panel2:#0f1730;
+      --text:#e9eeff;
+      --muted:#93a0c7;
+      --accent:#6ee7ff;
+      --danger:#ff6b8a;
+      --shadow: rgba(0,0,0,.35);
+      --safe-b: env(safe-area-inset-bottom, 0px);
+      --safe-t: env(safe-area-inset-top, 0px);
+    }
+    *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+    html,body{ height:100%; margin:0; background:var(--bg); color:var(--text); font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;}
+    body{
+      overscroll-behavior: none;
+      touch-action: none; /* 重要: ピンチズーム/スクロール抑止（JSでも補強） */
+      user-select:none;
+    }
+    #app{
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      padding: calc(10px + var(--safe-t)) 10px calc(10px + var(--safe-b)) 10px;
+      gap:10px;
+    }
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px 12px;
+      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:14px;
+      box-shadow: 0 8px 20px var(--shadow);
+    }
+    .title{
+      display:flex; flex-direction:column; gap:2px;
+      min-width: 0;
+    }
+    .title b{ font-size:14px; letter-spacing:.2px; }
+    .title span{ font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .stats{
+      display:flex; gap:10px; align-items:center;
+      font-variant-numeric: tabular-nums;
+    }
+    .pill{
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:999px;
+      padding:8px 10px;
+      font-size:12px;
+      display:flex; gap:6px; align-items:baseline;
+    }
+    .pill .k{ color:var(--muted); font-size:11px; }
+    .pill .v{ font-weight:700; }
+    button{
+      appearance:none;
+      border:none;
+      background:rgba(110,231,255,.18);
+      color:var(--text);
+      border:1px solid rgba(110,231,255,.35);
+      padding:10px 12px;
+      border-radius:12px;
+      font-weight:700;
+      font-size:12px;
+      box-shadow: 0 8px 20px var(--shadow);
+    }
+    button:active{ transform: translateY(1px); }
+
+    /* ゲーム領域 */
+    .stage{
+      flex:1;
+      min-height:0;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .boardWrap{
+      flex:1;
+      min-height:0;
+      background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:16px;
+      box-shadow: 0 12px 26px var(--shadow);
+      position:relative;
+      overflow:hidden;
+    }
+    canvas{
+      width:100%;
+      height:100%;
+      display:block;
+    }
+
+    /* ピーストレイ */
+    .tray{
+      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:16px;
+      box-shadow: 0 12px 26px var(--shadow);
+      padding:10px;
+      display:flex;
+      gap:10px;
+      align-items:stretch;
+      justify-content:space-between;
+    }
+    .slot{
+      flex:1;
+      background:rgba(0,0,0,.20);
+      border:1px dashed rgba(255,255,255,.16);
+      border-radius:14px;
+      position:relative;
+      overflow:hidden;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:88px;
+    }
+    .slot.selected{
+      border-style:solid;
+      border-color: rgba(110,231,255,.55);
+      box-shadow: inset 0 0 0 2px rgba(110,231,255,.12);
+    }
+    .slot small{
+      position:absolute;
+      left:10px; top:8px;
+      color:var(--muted);
+      font-size:10px;
+      letter-spacing:.2px;
+    }
+    .hint{
+      font-size:12px;
+      color:var(--muted);
+      text-align:center;
+      padding:2px 6px;
+    }
+
+    /* オーバーレイ */
+    .overlay{
+      position:absolute; inset:0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      z-index: 5;
+      padding:20px;
+    }
+    .overlay.show{ display:flex; }
+    .card{
+      width:min(420px, 92vw);
+      background:linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.06));
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:18px;
+      padding:16px;
+      box-shadow: 0 18px 40px var(--shadow);
+    }
+    .card h2{
+      margin:0 0 6px 0;
+      font-size:16px;
+    }
+    .card p{
+      margin:6px 0;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.5;
+    }
+    .row{
+      display:flex; gap:10px; margin-top:12px;
+    }
+    .row button{ flex:1; }
+    .danger{
+      background:rgba(255,107,138,.16);
+      border-color:rgba(255,107,138,.40);
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="title">
+      <b>Hex Blast</b>
+      <span>Block Blast風（六角マス）｜タップで遊べます</span>
+    </div>
+    <div class="stats">
+      <div class="pill"><span class="k">SCORE</span><span class="v" id="score">0</span></div>
+      <div class="pill"><span class="k">COMBO</span><span class="v" id="combo">0</span></div>
+      <button id="restartBtn" title="最初から">リスタート</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="boardWrap" id="boardWrap">
+      <canvas id="board"></canvas>
+
+      <div class="overlay" id="overlay">
+        <div class="card">
+          <h2 id="ovTitle">ゲームオーバー</h2>
+          <p id="ovText">置ける場所がありません。リスタートしますか？</p>
+          <div class="row">
+            <button class="danger" id="ovRestart">リスタート</button>
+            <button id="ovClose">閉じる</button>
+          </div>
+          <p style="margin-top:10px;">
+            <b style="color:var(--text)">操作</b><br>
+            ・下のピースをタップして選択<br>
+            ・盤面の置きたい場所をタップして配置<br>
+            ・3方向いずれかの“列”が埋まると消えます
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tray" id="tray">
+      <div class="slot" data-slot="0"><small>PIECE 1</small><canvas class="pc" width="200" height="120"></canvas></div>
+      <div class="slot" data-slot="1"><small>PIECE 2</small><canvas class="pc" width="200" height="120"></canvas></div>
+      <div class="slot" data-slot="2"><small>PIECE 3</small><canvas class="pc" width="200" height="120"></canvas></div>
+    </div>
+    <div class="hint" id="hint">ピースを選んで、盤面をタップして配置</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // =============================
+  // iPhone: スクロール/ピンチを強力に抑止
+  // =============================
+  const prevent = (e) => { e.preventDefault(); };
+  document.addEventListener('touchmove', prevent, { passive:false });
+  document.addEventListener('gesturestart', prevent, { passive:false });
+  document.addEventListener('gesturechange', prevent, { passive:false });
+  document.addEventListener('gestureend', prevent, { passive:false });
+
+  // =============================
+  // Hex grid helpers (axial coords)
+  // q, r with s = -q-r
+  // =============================
+  const axial = (q,r) => ({q,r});
+  const keyOf = (q,r) => `${q},${r}`;
+  const dirs = [
+    {q: 1, r: 0}, {q: 1, r:-1}, {q: 0, r:-1},
+    {q:-1, r: 0}, {q:-1, r: 1}, {q: 0, r: 1}
+  ];
+
+  // Board: hexagon-shaped of radius R
+  const RADIUS = 5; // side length 5 => 91? Actually cells = 1+3R(R+1)=91 for R=5
+  // 91 cells fits well if hex size adjusted.
+
+  function inBoard(q,r){
+    const s = -q - r;
+    return (Math.abs(q) <= RADIUS && Math.abs(r) <= RADIUS && Math.abs(s) <= RADIUS);
+  }
+
+  function allCells(){
+    const arr = [];
+    for(let q=-RADIUS; q<=RADIUS; q++){
+      for(let r=-RADIUS; r<=RADIUS; r++){
+        if(inBoard(q,r)) arr.push({q,r});
+      }
+    }
+    return arr;
+  }
+
+  // =============================
+  // Rendering (canvas)
+  // =============================
+  const boardWrap = document.getElementById('boardWrap');
+  const boardCanvas = document.getElementById('board');
+  const bctx = boardCanvas.getContext('2d');
+
+  const tray = document.getElementById('tray');
+  const slotEls = [...tray.querySelectorAll('.slot')];
+  const pieceCanvases = [...tray.querySelectorAll('canvas.pc')].map(c => ({el:c, ctx:c.getContext('2d')}));
+
+  const scoreEl = document.getElementById('score');
+  const comboEl = document.getElementById('combo');
+  const hintEl = document.getElementById('hint');
+
+  const overlay = document.getElementById('overlay');
+  const ovTitle = document.getElementById('ovTitle');
+  const ovText = document.getElementById('ovText');
+  const ovRestart = document.getElementById('ovRestart');
+  const ovClose = document.getElementById('ovClose');
+
+  const restartBtn = document.getElementById('restartBtn');
+
+  // Layout computations
+  let geom = {
+    hexSize: 18,
+    originX: 0,
+    originY: 0,
+    cellToPix: new Map(), // key -> {x,y}
+    pixToCell: null
+  };
+
+  function resizeBoard(){
+    const rect = boardWrap.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    boardCanvas.width = Math.floor(rect.width * dpr);
+    boardCanvas.height = Math.floor(rect.height * dpr);
+    bctx.setTransform(dpr,0,0,dpr,0,0);
+
+    // compute best hex size so board fits inside rect with padding
+    const pad = 14;
+    const W = rect.width - pad*2;
+    const H = rect.height - pad*2;
+
+    // pointy-top axial to pixel:
+    // x = size * sqrt(3) * (q + r/2)
+    // y = size * 3/2 * r
+    const SQ3 = Math.sqrt(3);
+
+    // estimate extents for radius R
+    // max |q+r/2| approx R + R/2 = 1.5R
+    // so width approx 2 * size * sqrt(3) * 1.5R = size * sqrt(3) * 3R
+    // height approx 2 * size * 1.5R = size * 3R
+    // so size <= min(W/(SQ3*3R), H/(3R))
+    const size = Math.floor(Math.min(W/(SQ3*3*RADIUS), H/(3*RADIUS)) * 0.98);
+    geom.hexSize = Math.max(10, size);
+
+    // center origin
+    geom.originX = rect.width/2;
+    geom.originY = rect.height/2 + 4;
+
+    // precompute positions
+    geom.cellToPix = new Map();
+    const cells = allCells();
+    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+    for(const c of cells){
+      const p = axialToPixel(c.q,c.r);
+      minX = Math.min(minX,p.x); maxX = Math.max(maxX,p.x);
+      minY = Math.min(minY,p.y); maxY = Math.max(maxY,p.y);
+    }
+    // re-center to keep inside pad
+    const boardW = (maxX-minX) + geom.hexSize*2;
+    const boardH = (maxY-minY) + geom.hexSize*2;
+    const shiftX = (rect.width - boardW)/2 - (minX - geom.hexSize);
+    const shiftY = (rect.height - boardH)/2 - (minY - geom.hexSize);
+
+    geom.originX = shiftX;
+    geom.originY = shiftY;
+
+    for(const c of cells){
+      const p = axialToPixel(c.q,c.r);
+      geom.cellToPix.set(keyOf(c.q,c.r), p);
+    }
+
+    // pixel -> axial (approx) using cube rounding
+    geom.pixToCell = (x,y) => {
+      // convert to axial coords
+      // q = (sqrt(3)/3 * x - 1/3 * y)/size
+      // r = (2/3 * y)/size
+      const size = geom.hexSize;
+      const q = (SQ3/3 * x - 1/3 * y) / size;
+      const r = (2/3 * y) / size;
+      const c = axialRound(q,r);
+      if(!inBoard(c.q,c.r)) return null;
+      return c;
+    };
+
+    draw();
+    drawTray();
+  }
+
+  function axialToPixel(q,r){
+    const size = geom.hexSize;
+    const SQ3 = Math.sqrt(3);
+    return {
+      x: geom.originX + size * SQ3 * (q + r/2),
+      y: geom.originY + size * 1.5 * r
+    };
+  }
+
+  function axialRound(q,r){
+    // cube coords
+    let x=q, z=r, y=-x-z;
+    let rx=Math.round(x), ry=Math.round(y), rz=Math.round(z);
+    const x_diff=Math.abs(rx-x), y_diff=Math.abs(ry-y), z_diff=Math.abs(rz-z);
+    if (x_diff > y_diff && x_diff > z_diff) rx = -ry - rz;
+    else if (y_diff > z_diff) ry = -rx - rz;
+    else rz = -rx - ry;
+    return {q: rx, r: rz};
+  }
+
+  function hexPath(ctx, x, y, size){
+    ctx.beginPath();
+    for(let i=0;i<6;i++){
+      const a = (Math.PI/180) * (60*i - 30); // pointy top
+      const px = x + size * Math.cos(a);
+      const py = y + size * Math.sin(a);
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.closePath();
+  }
+
+  // =============================
+  // Game state
+  // =============================
+  const cells = allCells();
+  let occupied = new Map(); // key -> colorIndex
+  let score = 0;
+  let combo = 0;
+
+  // Piece patterns (polyhex), axial coordinates relative to anchor (0,0)
+  // Represented as array of {q,r}
+  const PATTERNS = [
+    // singles & small
+    [{q:0,r:0}],
+    [{q:0,r:0},{q:1,r:0}],
+    [{q:0,r:0},{q:0,r:1}],
+    [{q:0,r:0},{q:1,r:-1}],
+    // triangles / 3
+    [{q:0,r:0},{q:1,r:0},{q:0,r:1}],
+    [{q:0,r:0},{q:1,r:0},{q:1,r:-1}],
+    [{q:0,r:0},{q:0,r:1},{q:-1,r:1}],
+    // line 3
+    [{q:0,r:0},{q:1,r:0},{q:2,r:0}],
+    [{q:0,r:0},{q:0,r:1},{q:0,r:2}],
+    [{q:0,r:0},{q:1,r:-1},{q:2,r:-2}],
+    // 4
+    [{q:0,r:0},{q:1,r:0},{q:2,r:0},{q:3,r:0}],
+    [{q:0,r:0},{q:0,r:1},{q:0,r:2},{q:0,r:3}],
+    [{q:0,r:0},{q:1,r:0},{q:0,r:1},{q:-1,r:1}],
+    [{q:0,r:0},{q:1,r:0},{q:1,r:-1},{q:2,r:-1}],
+    // 5
+    [{q:0,r:0},{q:1,r:0},{q:2,r:0},{q:1,r:-1},{q:1,r:1}],
+    [{q:0,r:0},{q:1,r:0},{q:0,r:1},{q:-1,r:1},{q:1,r:-1}],
+    [{q:0,r:0},{q:0,r:1},{q:0,r:2},{q:1,r:1},{q:-1,r:1}],
+    [{q:0,r:0},{q:1,r:0},{q:2,r:0},{q:3,r:0},{q:4,r:0}],
+  ];
+
+  const COLORS = [
+    {fill:"rgba(110,231,255,.85)", stroke:"rgba(110,231,255,.95)"},
+    {fill:"rgba(167,139,250,.82)", stroke:"rgba(167,139,250,.95)"},
+    {fill:"rgba(52,211,153,.80)", stroke:"rgba(52,211,153,.92)"},
+    {fill:"rgba(251,191,36,.82)", stroke:"rgba(251,191,36,.95)"},
+    {fill:"rgba(248,113,113,.80)", stroke:"rgba(248,113,113,.92)"},
+  ];
+
+  let pieces = [null,null,null]; // {cells:[{q,r}], color, used:false}
+  let selectedSlot = -1;
+  let hoverPlacement = null; // {slot, anchorCell:{q,r}, ok:boolean, absCells:[]}
+
+  function randInt(n){ return Math.floor(Math.random()*n); }
+
+  function newPiece(){
+    const pattern = PATTERNS[randInt(PATTERNS.length)];
+    const color = randInt(COLORS.length);
+    // normalize pattern so min q,r shift not needed, but keep as-is
+    return { cells: pattern.map(c=>({q:c.q,r:c.r})), color, used:false };
+  }
+
+  function refillPieces(){
+    for(let i=0;i<3;i++){
+      if(!pieces[i] || pieces[i].used){
+        pieces[i] = newPiece();
+      }
+    }
+    // if none of the 3 are placeable => game over
+    if(!anyMovePossible()){
+      showOverlay("ゲームオーバー", "どのピースも置ける場所がありません。");
+    }
+  }
+
+  function resetGame(){
+    occupied = new Map();
+    score = 0;
+    combo = 0;
+    selectedSlot = -1;
+    hoverPlacement = null;
+    for(let i=0;i<3;i++) pieces[i]=newPiece();
+    updateHUD();
+    hideOverlay();
+    draw();
+    drawTray();
+    hintEl.textContent = "ピースを選んで、盤面をタップして配置";
+    if(!anyMovePossible()){
+      // まれに初期で詰むのを回避
+      for(let t=0;t<5 && !anyMovePossible();t++){
+        for(let i=0;i<3;i++) pieces[i]=newPiece();
+      }
+    }
+  }
+
+  function updateHUD(){
+    scoreEl.textContent = score.toString();
+    comboEl.textContent = combo.toString();
+  }
+
+  // =============================
+  // Placement & line clearing
+  // Hex “rows” exist along 3 axes:
+  //  - q constant (vertical-ish)
+  //  - r constant
+  //  - s constant where s = -q-r
+  // A line clears when all cells with that constant within board are occupied.
+  // =============================
+  function pieceAbsCells(piece, anchor){
+    return piece.cells.map(c => ({ q: c.q + anchor.q, r: c.r + anchor.r }));
+  }
+
+  function canPlace(piece, anchor){
+    const abs = pieceAbsCells(piece, anchor);
+    for(const c of abs){
+      if(!inBoard(c.q,c.r)) return false;
+      if(occupied.has(keyOf(c.q,c.r))) return false;
+    }
+    return true;
+  }
+
+  function placePiece(slot, anchor){
+    const piece = pieces[slot];
+    if(!piece || piece.used) return false;
+    if(!canPlace(piece, anchor)) return false;
+
+    const abs = pieceAbsCells(piece, anchor);
+    for(const c of abs){
+      occupied.set(keyOf(c.q,c.r), piece.color);
+    }
+
+    // base score for placement
+    score += abs.length * 5;
+
+    // clear lines
+    const cleared = clearFullLines();
+    if(cleared > 0){
+      combo += 1;
+      // scoring: reward lines + combo
+      score += cleared * 60 + combo * 20;
+      hintEl.textContent = `ライン消去！ +${cleared}（コンボ ${combo}）`;
+    }else{
+      combo = 0;
+      hintEl.textContent = "ナイス！ 次の手を考えよう";
+    }
+
+    piece.used = true;
+    selectedSlot = -1;
+    hoverPlacement = null;
+
+    refillPieces();
+    updateHUD();
+    draw();
+    drawTray();
+    return true;
+  }
+
+  function clearFullLines(){
+    let clearedCount = 0;
+
+    // Build sets by constants
+    // Gather all possible constants present in board
+    const qSet = new Set();
+    const rSet = new Set();
+    const sSet = new Set();
+    for(const c of cells){
+      qSet.add(c.q);
+      rSet.add(c.r);
+      sSet.add(-c.q - c.r);
+    }
+
+    const toClear = new Set();
+
+    // q constant lines
+    for(const q of qSet){
+      const line = cells.filter(c => c.q === q);
+      if(line.length>0 && line.every(c => occupied.has(keyOf(c.q,c.r)))){
+        for(const c of line) toClear.add(keyOf(c.q,c.r));
+        clearedCount++;
+      }
+    }
+    // r constant lines
+    for(const r of rSet){
+      const line = cells.filter(c => c.r === r);
+      if(line.length>0 && line.every(c => occupied.has(keyOf(c.q,c.r)))){
+        for(const c of line) toClear.add(keyOf(c.q,c.r));
+        clearedCount++;
+      }
+    }
+    // s constant lines
+    for(const s of sSet){
+      const line = cells.filter(c => (-c.q - c.r) === s);
+      if(line.length>0 && line.every(c => occupied.has(keyOf(c.q,c.r)))){
+        for(const c of line) toClear.add(keyOf(c.q,c.r));
+        clearedCount++;
+      }
+    }
+
+    // remove
+    if(toClear.size>0){
+      for(const k of toClear) occupied.delete(k);
+    }
+    return clearedCount;
+  }
+
+  function anyMovePossible(){
+    for(let i=0;i<3;i++){
+      const p = pieces[i];
+      if(!p || p.used) continue;
+      if(pieceHasAnyPlacement(p)) return true;
+    }
+    return false;
+  }
+
+  function pieceHasAnyPlacement(piece){
+    for(const c of cells){
+      if(canPlace(piece, c)) return true;
+    }
+    return false;
+  }
+
+  // =============================
+  // Drawing
+  // =============================
+  function draw(){
+    const rect = boardWrap.getBoundingClientRect();
+    const W = rect.width, H = rect.height;
+
+    bctx.clearRect(0,0,W,H);
+
+    // Background subtle grid glow
+    bctx.save();
+    bctx.globalAlpha = 0.55;
+    bctx.fillStyle = "rgba(255,255,255,.02)";
+    bctx.fillRect(0,0,W,H);
+    bctx.restore();
+
+    // board frame
+    bctx.save();
+    bctx.strokeStyle = "rgba(255,255,255,.08)";
+    bctx.lineWidth = 2;
+    bctx.strokeRect(10,10,W-20,H-20);
+    bctx.restore();
+
+    // draw empty cells
+    for(const c of cells){
+      const p = geom.cellToPix.get(keyOf(c.q,c.r));
+      const size = geom.hexSize;
+      // base
+      hexPath(bctx, p.x, p.y, size-0.8);
+      bctx.fillStyle = "rgba(255,255,255,.04)";
+      bctx.fill();
+      bctx.strokeStyle = "rgba(255,255,255,.08)";
+      bctx.lineWidth = 1;
+      bctx.stroke();
+    }
+
+    // placement preview
+    if(hoverPlacement && hoverPlacement.absCells){
+      for(const c of hoverPlacement.absCells){
+        const p = geom.cellToPix.get(keyOf(c.q,c.r));
+        if(!p) continue;
+        const size = geom.hexSize;
+        hexPath(bctx, p.x, p.y, size-1.2);
+        bctx.fillStyle = hoverPlacement.ok ? "rgba(110,231,255,.18)" : "rgba(255,107,138,.18)";
+        bctx.fill();
+        bctx.strokeStyle = hoverPlacement.ok ? "rgba(110,231,255,.40)" : "rgba(255,107,138,.40)";
+        bctx.lineWidth = 2;
+        bctx.stroke();
+      }
+    }
+
+    // draw occupied cells
+    for(const [k, colorIdx] of occupied.entries()){
+      const [q,r] = k.split(',').map(Number);
+      const p = geom.cellToPix.get(k);
+      if(!p) continue;
+      const size = geom.hexSize;
+
+      // soft shadow
+      bctx.save();
+      bctx.translate(1.2, 1.6);
+      hexPath(bctx, p.x, p.y, size-1.1);
+      bctx.fillStyle = "rgba(0,0,0,.22)";
+      bctx.fill();
+      bctx.restore();
+
+      // fill
+      hexPath(bctx, p.x, p.y, size-1.4);
+      bctx.fillStyle = COLORS[colorIdx].fill;
+      bctx.fill();
+      bctx.strokeStyle = COLORS[colorIdx].stroke;
+      bctx.lineWidth = 2;
+      bctx.stroke();
+
+      // inner highlight
+      hexPath(bctx, p.x, p.y, (size-1.4)*0.62);
+      bctx.strokeStyle = "rgba(255,255,255,.10)";
+      bctx.lineWidth = 1.2;
+      bctx.stroke();
+    }
+
+    // helper message when no selection
+    if(selectedSlot === -1){
+      bctx.save();
+      bctx.fillStyle = "rgba(233,238,255,.70)";
+      bctx.font = "600 12px -apple-system, system-ui, sans-serif";
+      bctx.textAlign = "center";
+      bctx.fillText("下のピースをタップして選択", W/2, 26);
+      bctx.restore();
+    }
+  }
+
+  function drawTray(){
+    for(let i=0;i<3;i++){
+      slotEls[i].classList.toggle('selected', i === selectedSlot);
+      const pc = pieceCanvases[i];
+      const piece = pieces[i];
+      const ctx = pc.ctx;
+      const canvas = pc.el;
+      ctx.clearRect(0,0,canvas.width, canvas.height);
+
+      if(!piece || piece.used){
+        ctx.save();
+        ctx.fillStyle = "rgba(233,238,255,.30)";
+        ctx.font = "700 12px -apple-system, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("OK", canvas.width/2, canvas.height/2+4);
+        ctx.restore();
+        continue;
+      }
+
+      // compute piece bounding box in axial -> pixel local
+      const size = 12;
+      const SQ3 = Math.sqrt(3);
+      const pts = piece.cells.map(c => ({
+        x: size*SQ3*(c.q + c.r/2),
+        y: size*1.5*c.r
+      }));
+      let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+      for(const p of pts){
+        minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x);
+        minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y);
+      }
+      const w = (maxX-minX) + size*2;
+      const h = (maxY-minY) + size*2;
+      const ox = canvas.width/2 - (minX + maxX)/2;
+      const oy = canvas.height/2 - (minY + maxY)/2;
+
+      // draw each hex
+      for(const p0 of pts){
+        const x = p0.x + ox;
+        const y = p0.y + oy;
+
+        // shadow
+        ctx.save();
+        ctx.translate(1.2, 1.6);
+        hexPath(ctx, x, y, size-0.7);
+        ctx.fillStyle = "rgba(0,0,0,.22)";
+        ctx.fill();
+        ctx.restore();
+
+        hexPath(ctx, x, y, size-1.0);
+        ctx.fillStyle = COLORS[piece.color].fill;
+        ctx.fill();
+        ctx.strokeStyle = COLORS[piece.color].stroke;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // =============================
+  // Input (tap)
+  // =============================
+  function canvasPointFromEvent(e){
+    const rect = boardCanvas.getBoundingClientRect();
+    let clientX, clientY;
+    if(e.touches && e.touches[0]){
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    }else{
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  function updateHoverFromPoint(pt){
+    if(selectedSlot === -1) { hoverPlacement = null; draw(); return; }
+    const piece = pieces[selectedSlot];
+    if(!piece || piece.used) { hoverPlacement = null; draw(); return; }
+
+    // convert to board local (origin at 0,0 in canvas css pixels)
+    // but our pixToCell expects x,y relative to origin (geom.originX/Y)
+    const localX = pt.x - geom.originX;
+    const localY = pt.y - geom.originY;
+
+    const cell = geom.pixToCell(localX, localY);
+    if(!cell){ hoverPlacement = null; draw(); return; }
+
+    const abs = pieceAbsCells(piece, cell);
+    const ok = canPlace(piece, cell);
+    hoverPlacement = { slot:selectedSlot, anchorCell:cell, ok, absCells:abs };
+    draw();
+  }
+
+  function commitPlacementAtPoint(pt){
+    if(selectedSlot === -1) return;
+
+    const piece = pieces[selectedSlot];
+    if(!piece || piece.used) return;
+
+    const localX = pt.x - geom.originX;
+    const localY = pt.y - geom.originY;
+
+    const cell = geom.pixToCell(localX, localY);
+    if(!cell) return;
+
+    // Try direct anchor
+    if(placePiece(selectedSlot, cell)) return;
+
+    // If fail, try small neighborhood (tap not perfect)
+    const neigh = [{q:0,r:0}, ...dirs];
+    for(const d of neigh){
+      const a = {q: cell.q + d.q, r: cell.r + d.r};
+      if(placePiece(selectedSlot, a)) return;
+    }
+
+    // feedback
+    hintEl.textContent = "そこには置けません（空き＆盤面内が必要）";
+  }
+
+  // Board touch
+  boardCanvas.addEventListener('touchstart', (e) => {
+    const pt = canvasPointFromEvent(e);
+    updateHoverFromPoint(pt);
+  }, { passive:false });
+
+  boardCanvas.addEventListener('touchmove', (e) => {
+    const pt = canvasPointFromEvent(e);
+    updateHoverFromPoint(pt);
+  }, { passive:false });
+
+  boardCanvas.addEventListener('touchend', (e) => {
+    // touchend has no touches, use changedTouches
+    let clientX, clientY;
+    const rect = boardCanvas.getBoundingClientRect();
+    if(e.changedTouches && e.changedTouches[0]){
+      clientX = e.changedTouches[0].clientX;
+      clientY = e.changedTouches[0].clientY;
+      const pt = { x: clientX - rect.left, y: clientY - rect.top };
+      commitPlacementAtPoint(pt);
+    }
+  }, { passive:false });
+
+  // Desktop fallback (click)
+  boardCanvas.addEventListener('mousemove', (e) => updateHoverFromPoint(canvasPointFromEvent(e)));
+  boardCanvas.addEventListener('mouseleave', () => { hoverPlacement=null; draw(); });
+  boardCanvas.addEventListener('click', (e) => commitPlacementAtPoint(canvasPointFromEvent(e)));
+
+  // Slot selection
+  slotEls.forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = Number(el.dataset.slot);
+      toggleSelect(idx);
+    });
+    el.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      const idx = Number(el.dataset.slot);
+      toggleSelect(idx);
+    }, { passive:false });
+  });
+
+  function toggleSelect(idx){
+    const piece = pieces[idx];
+    if(!piece || piece.used) return;
+    selectedSlot = (selectedSlot === idx) ? -1 : idx;
+    hoverPlacement = null;
+    drawTray();
+    draw();
+    hintEl.textContent = selectedSlot === -1
+      ? "ピースを選んで、盤面をタップして配置"
+      : "盤面の置きたい場所をタップ";
+  }
+
+  // Overlay controls
+  function showOverlay(title, text){
+    ovTitle.textContent = title;
+    ovText.textContent = text;
+    overlay.classList.add('show');
+  }
+  function hideOverlay(){
+    overlay.classList.remove('show');
+  }
+  ovRestart.addEventListener('click', resetGame);
+  ovClose.addEventListener('click', hideOverlay);
+  ovRestart.addEventListener('touchend', (e) => { e.preventDefault(); resetGame(); }, {passive:false});
+  ovClose.addEventListener('touchend', (e) => { e.preventDefault(); hideOverlay(); }, {passive:false});
+
+  // Restart
+  restartBtn.addEventListener('click', resetGame);
+  restartBtn.addEventListener('touchend', (e)=>{ e.preventDefault(); resetGame(); }, {passive:false});
+
+  // Keep fit: ensure no scroll by locking body height
+  function lockViewport(){
+    // iOS address bar changes: keep app height matched
+    document.documentElement.style.height = "100%";
+    document.body.style.height = "100%";
+  }
+
+  window.addEventListener('resize', () => {
+    lockViewport();
+    resizeBoard();
+  });
+
+  // =============================
+  // Init
+  // =============================
+  lockViewport();
+  resizeBoard();
+  resetGame();
+})();
+</script>
+</body>
+</html>
