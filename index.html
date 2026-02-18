@@ -104,19 +104,6 @@
     }
     .hint{ font-size:12px; color:var(--muted); text-align:center; padding:2px 6px; }
 
-    /* Drag ghost */
-    #ghost{
-      position:fixed;
-      left:0; top:0;
-      width:140px; height:140px;
-      pointer-events:none;
-      z-index:9999;
-      display:none;
-      filter: drop-shadow(0 14px 20px rgba(0,0,0,.45));
-      transform: translate(-9999px,-9999px);
-    }
-    #ghost canvas{ width:100%; height:100%; }
-
     /* Overlay */
     .overlay{
       position:absolute; inset:0;
@@ -150,7 +137,7 @@
   <div class="topbar">
     <div class="title">
       <b>Hex Blast</b>
-      <span>指ではなく「狙い点（ゴースト）」でハイライト</span>
+      <span>ゴースト不可視（狙い点でハイライト/配置）</span>
     </div>
     <div class="stats">
       <div class="pill"><span class="k">SCORE</span><span class="v" id="score">0</span></div>
@@ -180,12 +167,9 @@
       <div class="slot" data-slot="1"><small>PIECE 2</small><canvas class="pc" width="200" height="120"></canvas></div>
       <div class="slot" data-slot="2"><small>PIECE 3</small><canvas class="pc" width="200" height="120"></canvas></div>
     </div>
-    <div class="hint" id="hint">ピースをドラッグして配置（ハイライトはゴースト基準）</div>
+    <div class="hint" id="hint">ピースをドラッグして配置（ハイライトは狙い点基準）</div>
   </div>
 </div>
-
-<!-- drag ghost -->
-<div id="ghost"><canvas id="ghostCanvas" width="200" height="200"></canvas></div>
 
 <script>
 (() => {
@@ -238,11 +222,6 @@
   const ovClose = document.getElementById('ovClose');
 
   const restartBtn = document.getElementById('restartBtn');
-
-  // Ghost
-  const ghost = document.getElementById('ghost');
-  const ghostCanvas = document.getElementById('ghostCanvas');
-  const gctx = ghostCanvas.getContext('2d');
 
   // ===== Geometry =====
   let geom = { hexSize: 18, originX: 0, originY: 0, cellToPix: new Map(), pixToCell: null };
@@ -495,7 +474,7 @@
     }
     updateHUD();
     hideOverlay();
-    hintEl.textContent = "ピースをドラッグして配置（ハイライトはゴースト基準）";
+    hintEl.textContent = "ピースをドラッグして配置（ハイライトは狙い点基準）";
     draw();
     drawTray();
   }
@@ -623,81 +602,18 @@
   }
 
   // =============================
-  // Drag: 指ではなく「狙い点（ゴースト基準）」で判定する
+  // Drag: ゴースト不可視、ただし「狙い点」でハイライト/配置
   // =============================
   const AIM = {
-    offsetY: 150,       // 指から上へ（ゴーストと同じ概念）
-    offsetXMag: 70,     // 左右へ逃がす量
-    yBias: 0            // さらに微調整したいなら -10 など
+    offsetY: 150,
+    offsetXMag: 70,
+    yBias: 0
   };
 
   function getAimPoint(clientX, clientY){
     const vw = window.innerWidth || 390;
     const offsetX = (clientX > vw * 0.55) ? -AIM.offsetXMag : AIM.offsetXMag;
-    return {
-      x: clientX + offsetX,
-      y: clientY - AIM.offsetY + AIM.yBias
-    };
-  }
-
-  // Ghost（表示位置）は今まで通り“見やすい場所”へ
-  function moveGhost(clientX, clientY){
-    const vw = window.innerWidth || 390;
-    const offsetX = (clientX > vw * 0.55) ? -AIM.offsetXMag : AIM.offsetXMag;
-
-    const halfW = 70;   // ghost(140px)半分
-    const tweakY = 90;
-
-    const x = clientX + offsetX - halfW;
-    const y = clientY - AIM.offsetY - tweakY;
-
-    ghost.style.transform = `translate(${x}px, ${y}px)`;
-  }
-
-  // ===== Ghost drawing =====
-  let drag = { active:false, slot:-1, pointerId:null, lastX:0, lastY:0 };
-
-  function showGhostForPiece(piece){
-    ghost.style.display = "block";
-    gctx.clearRect(0,0,ghostCanvas.width, ghostCanvas.height);
-
-    const size = 22;
-    const SQ3 = Math.sqrt(3);
-    const pts = piece.cells.map(c => ({
-      x: size*SQ3*(c.q + c.r/2),
-      y: size*1.5*c.r
-    }));
-    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-    for(const p of pts){
-      minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x);
-      minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y);
-    }
-    const ox = ghostCanvas.width/2 - (minX + maxX)/2;
-    const oy = ghostCanvas.height/2 - (minY + maxY)/2;
-
-    for(const p0 of pts){
-      const x = p0.x + ox;
-      const y = p0.y + oy;
-
-      gctx.save();
-      gctx.translate(1.6, 2.2);
-      hexPath(gctx, x, y, size-0.7);
-      gctx.fillStyle = "rgba(0,0,0,.22)";
-      gctx.fill();
-      gctx.restore();
-
-      hexPath(gctx, x, y, size-1.0);
-      gctx.fillStyle = COLORS[piece.color].fill;
-      gctx.fill();
-      gctx.strokeStyle = COLORS[piece.color].stroke;
-      gctx.lineWidth = 2.5;
-      gctx.stroke();
-    }
-  }
-
-  function hideGhost(){
-    ghost.style.display = "none";
-    ghost.style.transform = `translate(-9999px,-9999px)`;
+    return { x: clientX + offsetX, y: clientY - AIM.offsetY + AIM.yBias };
   }
 
   function boardCellFromClientXY(clientX, clientY){
@@ -735,7 +651,6 @@
     return false;
   }
 
-  // ★ドラッグ開始時：盤面中央を“最初のハイライト”にする
   function highlightBoardCenter(piece){
     const rect = boardCanvas.getBoundingClientRect();
     const cx = rect.left + rect.width/2;
@@ -747,6 +662,8 @@
     hoverPlacement = { anchorCell: cell, ok, absCells: abs };
     draw();
   }
+
+  let drag = { active:false, slot:-1, pointerId:null, lastX:0, lastY:0 };
 
   function onSlotPointerDown(e, slotIndex){
     const piece = pieces[slotIndex];
@@ -760,13 +677,11 @@
 
     e.currentTarget.setPointerCapture(e.pointerId);
 
-    showGhostForPiece(piece);
-    moveGhost(e.clientX, e.clientY);
-
+    // ゴーストは不可視（何もしない）
     // 初期ハイライトは盤面中央
     highlightBoardCenter(piece);
 
-    hintEl.textContent = "（ハイライトはゴースト基準）盤面で指を離すと配置";
+    hintEl.textContent = "（ゴースト不可視）ハイライトは狙い点で動きます";
   }
 
   function onSlotPointerMove(e){
@@ -777,10 +692,7 @@
     const piece = pieces[drag.slot];
     if(!piece || piece.used) return;
 
-    // 表示（ゴースト）更新
-    moveGhost(e.clientX, e.clientY);
-
-    // 判定/ハイライトは「狙い点」で更新（指の直下ではない）
+    // 指の直下ではなく狙い点でハイライト更新
     updatePreviewByAim(piece, e.clientX, e.clientY);
   }
 
@@ -804,16 +716,14 @@
 
     hoverPlacement = null;
     draw();
-    hideGhost();
 
     drag.active = false;
     drag.slot = -1;
     drag.pointerId = null;
 
-    if(placed) hintEl.textContent = "ピースをドラッグして配置（ハイライトはゴースト基準）";
+    if(placed) hintEl.textContent = "ピースをドラッグして配置（ハイライトは狙い点基準）";
   }
 
-  // attach to slots
   slotEls.forEach((el) => {
     const idx = Number(el.dataset.slot);
     el.addEventListener('pointerdown', (e) => { e.preventDefault(); onSlotPointerDown(e, idx); });
@@ -822,13 +732,11 @@
     el.addEventListener('pointercancel',(e)=> { e.preventDefault(); endDrag(e); });
   });
 
-  // keep updating while dragging
   window.addEventListener('pointermove', (e) => {
     if(!drag.active) return;
     const piece = pieces[drag.slot];
     if(!piece || piece.used) return;
     drag.lastX = e.clientX; drag.lastY = e.clientY;
-    moveGhost(e.clientX, e.clientY);
     updatePreviewByAim(piece, e.clientX, e.clientY);
   }, {passive:false});
 
@@ -848,7 +756,7 @@
   ovClose.addEventListener('click', hideOverlay);
   restartBtn.addEventListener('click', resetGame);
 
-  // ===== Resize / Init =====
+  // ===== Init / Resize =====
   function lockViewport(){
     document.documentElement.style.height = "100%";
     document.body.style.height = "100%";
@@ -858,26 +766,9 @@
     resizeBoard();
   });
 
-  // ===== init pieces =====
-  function initPieces(){
-    pieces = [newPiece(), newPiece(), newPiece()];
-    for(let t=0;t<6 && !anyMovePossible();t++){
-      pieces = [newPiece(), newPiece(), newPiece()];
-    }
-  }
-
   lockViewport();
   resizeBoard();
-  initPieces();
-  updateHUD();
-  draw();
-  drawTray();
-
-  // start game on load
-  function startNew(){
-    resetGame();
-  }
-
+  resetGame();
 })();
 </script>
 </body>
