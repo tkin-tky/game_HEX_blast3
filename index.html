@@ -68,9 +68,9 @@
       .title {
         display: flex;
         flex-direction: row;
-        align-items: baseline;
+        align-items: center;
         gap: 6px;
-        min-width: 0;
+        flex-shrink: 0;
       }
       .title b {
         font-size: 13px;
@@ -423,13 +423,13 @@
         }
 
         function computeSizeAndOrigin(rect) {
-          const pad = 8;
+          const pad = 4;
           const W = rect.width - pad * 2;
           const H = rect.height - pad * 2;
           const SQ3 = Math.sqrt(3);
 
           let size = Math.floor(
-            Math.min(W / (SQ3 * 3 * RADIUS), H / (3 * RADIUS)) * 0.98,
+            Math.min(W / (SQ3 * 3 * RADIUS), H / (3 * RADIUS)) * 1.05,
           );
           size = Math.max(10, size);
 
@@ -792,18 +792,9 @@
           const rect = boardWrap.getBoundingClientRect();
           const W = rect.width,
             H = rect.height;
-          bctx.clearRect(0, 0, W, H);
-
           bctx.save();
-          bctx.globalAlpha = 0.55;
-          bctx.fillStyle = "rgba(255,255,255,.02)";
-          bctx.fillRect(0, 0, W, H);
-          bctx.restore();
-
-          bctx.save();
-          bctx.strokeStyle = "rgba(255,255,255,.08)";
-          bctx.lineWidth = 2;
-          bctx.strokeRect(10, 10, W - 20, H - 20);
+          bctx.setTransform(1, 0, 0, 1, 0, 0);
+          bctx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
           bctx.restore();
 
           for (const c of cells) {
