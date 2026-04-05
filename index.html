@@ -186,6 +186,11 @@
       transition: border-color .2s, box-shadow .2s;
     }
     .slot:hover { border-color: rgba(56,232,255,.35); box-shadow: 0 0 15px rgba(56,232,255,.1); }
+    .slot.selected {
+      border-color: rgba(56,232,255,.9);
+      border-style: solid;
+      box-shadow: 0 0 22px rgba(56,232,255,.45), inset 0 0 12px rgba(56,232,255,.10);
+    }
     .slot small {
       position: absolute; left: 8px; top: 6px;
       font-family: 'Orbitron', monospace;
@@ -730,93 +735,104 @@
     }
   }
 
-  // ── Drag ──
-  const AIM = { offsetY: 150, offsetXMag: 90, yBias: 0 };
+  // ── Interaction: tap slot to select, then drag board to place ──
+  let selectedSlot = -1;   // which tray slot is selected (-1 = none)
+  let boardDrag = { active: false, pointerId: null };
 
-  function getAimPoint(clientX, clientY) {
-    const vw = window.innerWidth || 390;
-    // Right-side pieces need a larger leftward offset so the aim reaches the board's right edge
-    const xFrac = clientX / vw;
-    let offsetX;
-    if (xFrac > 0.75)      offsetX = -AIM.offsetXMag * 1.6;
-    else if (xFrac > 0.55) offsetX = -AIM.offsetXMag;
-    else                   offsetX =  AIM.offsetXMag;
-    return { x: clientX + offsetX, y: clientY - AIM.offsetY + AIM.yBias };
+  function selectSlot(idx) {
+    selectedSlot = idx;
+    slotEls.forEach((el, i) => el.classList.toggle('selected', i === idx));
+    const piece = pieces[idx];
+    if (piece && !piece.used) {
+      hintEl.textContent = 'ボード上をドラッグして配置';
+      // Show preview at board center immediately
+      const rect = boardCanvas.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+      const cell = boardCellFromClientXY(cx, cy);
+      if (cell) { hoverPlacement = { anchorCell: cell, ok: canPlace(piece, cell), absCells: pieceAbsCells(piece, cell) }; draw(); }
+    }
   }
+  function deselectSlot() {
+    selectedSlot = -1;
+    slotEls.forEach(el => el.classList.remove('selected'));
+    hoverPlacement = null;
+    draw();
+    hintEl.textContent = 'ピースをドラッグして配置';
+  }
+
   function boardCellFromClientXY(clientX, clientY) {
     const rect = boardCanvas.getBoundingClientRect();
-    // Clamp to board bounds so dragging off-screen still hits edge cells
-    const clampedX = Math.max(rect.left, Math.min(rect.right,  clientX));
-    const clampedY = Math.max(rect.top,  Math.min(rect.bottom, clientY));
-    const localX = clampedX - rect.left - geom.originX;
-    const localY = clampedY - rect.top  - geom.originY;
+    const localX = clientX - rect.left - geom.originX;
+    const localY = clientY - rect.top  - geom.originY;
     return geom.pixToCell(localX, localY);
   }
-  function updatePreviewByAim(piece, fx, fy) {
-    const aim = getAimPoint(fx, fy);
-    const cell = boardCellFromClientXY(aim.x, aim.y);
-    if (!cell) { hoverPlacement = null; draw(); return; }
-    hoverPlacement = { anchorCell: cell, ok: canPlace(piece, cell), absCells: pieceAbsCells(piece, cell) };
-    draw();
-  }
-  function tryDropByAim(piece, fx, fy) {
-    const aim = getAimPoint(fx, fy);
-    const cell = boardCellFromClientXY(aim.x, aim.y);
-    if (!cell) return false;
-    for (const d of [{ q: 0, r: 0 }, ...dirs]) {
-      const a = { q: cell.q + d.q, r: cell.r + d.r };
-      if (canPlace(piece, a)) { placePieceByAnchor(piece, a); return true; }
-    }
-    return false;
-  }
-  function highlightBoardCenter(piece) {
-    const rect = boardCanvas.getBoundingClientRect();
-    const cell = boardCellFromClientXY(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    if (!cell) { hoverPlacement = null; draw(); return; }
-    hoverPlacement = { anchorCell: cell, ok: canPlace(piece, cell), absCells: pieceAbsCells(piece, cell) };
-    draw();
-  }
 
-  let drag = { active: false, slot: -1, pointerId: null, lastX: 0, lastY: 0 };
-
-  function onSlotPointerDown(e, slotIndex) {
-    const piece = pieces[slotIndex];
-    if (!piece || piece.used) return;
-    drag.active = true; drag.slot = slotIndex;
-    drag.pointerId = e.pointerId; drag.lastX = e.clientX; drag.lastY = e.clientY;
-    // Capture on body so pointer events are never lost even at screen edges
-    try { document.body.setPointerCapture(e.pointerId); } catch(_) {}
-    highlightBoardCenter(piece);
-    hintEl.textContent = 'ハイライト位置にドロップ';
-  }
-  function endDrag(e) {
-    if (!drag.active || e.pointerId !== drag.pointerId) return;
-    const piece = pieces[drag.slot];
-    let placed = false;
-    if (piece && !piece.used) {
-      placed = tryDropByAim(piece, drag.lastX, drag.lastY);
-      if (placed) { piece.used = true; refillPieces(); drawTray(); draw(); }
-      else hintEl.textContent = 'そこには置けません';
-    }
-    hoverPlacement = null; draw();
-    drag.active = false; drag.slot = -1; drag.pointerId = null;
-    if (placed) hintEl.textContent = 'ピースをドラッグして配置';
-  }
-
+  // Tap on a tray slot → select it
   slotEls.forEach(el => {
     const idx = Number(el.dataset.slot);
-    el.addEventListener('pointerdown', e => { e.preventDefault(); onSlotPointerDown(e, idx); });
+    el.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const piece = pieces[idx];
+      if (!piece || piece.used) return;
+      if (selectedSlot === idx) { deselectSlot(); return; }
+      selectSlot(idx);
+    });
   });
-  window.addEventListener('pointermove', e => {
-    if (!drag.active) return;
+
+  // Board pointer events: drag to preview and place
+  boardCanvas.addEventListener('pointerdown', e => {
     e.preventDefault();
-    const piece = pieces[drag.slot];
+    if (selectedSlot < 0) return;
+    const piece = pieces[selectedSlot];
     if (!piece || piece.used) return;
-    drag.lastX = e.clientX; drag.lastY = e.clientY;
-    updatePreviewByAim(piece, e.clientX, e.clientY);
-  }, { passive: false });
-  window.addEventListener('pointerup',     e => { if (drag.active) endDrag(e); }, { passive: false });
-  window.addEventListener('pointercancel', e => { if (drag.active) endDrag(e); }, { passive: false });
+    boardDrag.active = true;
+    boardDrag.pointerId = e.pointerId;
+    boardCanvas.setPointerCapture(e.pointerId);
+    const cell = boardCellFromClientXY(e.clientX, e.clientY);
+    if (cell) { hoverPlacement = { anchorCell: cell, ok: canPlace(piece, cell), absCells: pieceAbsCells(piece, cell) }; draw(); }
+  });
+
+  boardCanvas.addEventListener('pointermove', e => {
+    e.preventDefault();
+    if (!boardDrag.active || e.pointerId !== boardDrag.pointerId) return;
+    const piece = pieces[selectedSlot];
+    if (!piece || piece.used) return;
+    const cell = boardCellFromClientXY(e.clientX, e.clientY);
+    if (cell) { hoverPlacement = { anchorCell: cell, ok: canPlace(piece, cell), absCells: pieceAbsCells(piece, cell) }; }
+    else { hoverPlacement = null; }
+    draw();
+  });
+
+  boardCanvas.addEventListener('pointerup', e => {
+    e.preventDefault();
+    if (!boardDrag.active || e.pointerId !== boardDrag.pointerId) return;
+    boardDrag.active = false;
+    const piece = pieces[selectedSlot];
+    if (!piece || piece.used) { deselectSlot(); return; }
+    const cell = boardCellFromClientXY(e.clientX, e.clientY);
+    let placed = false;
+    if (cell) {
+      // Try exact cell first, then immediate neighbours
+      for (const d of [{ q: 0, r: 0 }, ...dirs]) {
+        const a = { q: cell.q + d.q, r: cell.r + d.r };
+        if (canPlace(piece, a)) { placePieceByAnchor(piece, a); placed = true; break; }
+      }
+    }
+    if (placed) {
+      piece.used = true;
+      refillPieces(); drawTray(); draw();
+      deselectSlot();
+      hintEl.textContent = 'ピースをドラッグして配置';
+    } else {
+      hoverPlacement = null; draw();
+      hintEl.textContent = cell ? 'そこには置けません — 別の場所を試して' : 'ボード上で指を離してください';
+    }
+  });
+
+  boardCanvas.addEventListener('pointercancel', e => {
+    boardDrag.active = false;
+    hoverPlacement = null; draw();
+  });
 
   function showOverlay(title, text) { ovTitle.textContent = title; ovText.textContent = text; overlay.classList.add('show'); }
   function hideOverlay() { overlay.classList.remove('show'); }
