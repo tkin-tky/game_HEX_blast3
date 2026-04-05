@@ -762,8 +762,10 @@
 
   function boardCellFromClientXY(clientX, clientY) {
     const rect = boardCanvas.getBoundingClientRect();
+    // Offset upward so the preview is visible above the finger
+    const FINGER_OFFSET_Y = geom.hexSize * 2.8 || 50;
     const localX = clientX - rect.left - geom.originX;
-    const localY = clientY - rect.top  - geom.originY;
+    const localY = (clientY - FINGER_OFFSET_Y) - rect.top  - geom.originY;
     return geom.pixToCell(localX, localY);
   }
 
